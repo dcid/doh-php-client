@@ -1,9 +1,10 @@
 # doh-php-client
 DoH (DNS over HTTPS) PHP Client
 
-This is a proof of concept for DoH (DNS over HTTPS) client in PHP. It has not been fully tested, but seems to be working properly for A, AAAA and CNAME records.
+This is a proof of concept for a DoH (DNS over HTTPS) client in PHP. It is based on the latest draft `https://tools.ietf.org/html/draft-ietf-doh-dns-over-https-03` and supports the GET method with the DNS UDP wire format. This is a work in progress and only the A, AAAA and CNAME records are supported. 
 
-I will be adding NS and MX records when time permits.
+MX and NS are coming soon.
+
 
 ## Examples
 
@@ -18,8 +19,10 @@ Or for IPv6:
      $ php doh-php-client.php sucuri.net AAAA
      sucuri.net has IPv6 address 2a02:fe80:1010::16
 
-It will use Google's experimental DoH server, but you can switch to any other.
+
+It will use Google's experimental DoH server by default, but you can switch to any other.
+
 
 ## Limitations
 
-This is just an initial test version. We will be spliting it into a better package later. 
+This is just an initial test version. We will be spliting it into a better organized package later. 
