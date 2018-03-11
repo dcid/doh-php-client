@@ -15,8 +15,8 @@ This tool should be executed from the command line and it has a similar output a
 
 Or for IPv6:
 
-    php doh-php-client.php sucuri.net AAAA
-    sucuri.net has IPv6 address 2a02:fe80:1010::16
+     $ php doh-php-client.php sucuri.net AAAA
+     sucuri.net has IPv6 address 2a02:fe80:1010::16
 
 It will use Google's experimental DoH server, but you can switch to any other.
 
