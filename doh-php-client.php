@@ -9,8 +9,9 @@
 
 
 /* Public DoH servers: 
- * https://doh.crypto.sx/dns-query?ct&dns=
- * https://dns.google.com/experimental?ct&dns=
+ * cloudflare https://cloudflare-dns.com/dns-query
+ * google https://dns.google.com/experimental?ct&dns=
+ * cleanbrowsing https://doh.cleanbrowsing.org/doh/family-filter/
  */
 
 
@@ -208,27 +209,41 @@ function doh_read_dnsanswer($raw, $requesttype)
 
 
 /* Testing. */
-if(!isset($argv[1]))
+if(!isset($argv[2]))
 {
-    echo "Usage: ". $argv[0]. " [domain] <type: A, AAAA or CNAME>\n";
+    echo "Usage: ". $argv[0]. " [server:cloudflare,google,cleanbrowsing] [domain.com] <type: A, AAAA or CNAME>\n";
     exit(1);
 }
-$domainname = $argv[1];
 
-if(!isset($argv[2]))
+if($argv[1] == "cloudflare")
+{
+    $dohserver = "https://cloudflare-dns.com/dns-query?ct=application/dns-udpwireformat&dns=";
+}
+else if($argv[1] == "cleanbrowsing")
+{
+    $dohserver = "https://doh.cleanbrowsing.org/doh/family-filter/?ct&dns=";
+}
+else
+{
+    $dohserver = "https://dns.google.com/experimental?ct&dns=";
+}
+
+
+$domainname = $argv[2];
+if(!isset($argv[3]))
 {
     $requesttype = "A";
 }
 else
 {
-    $requesttype = $argv[2];
+    $requesttype = $argv[3];
 }
 
 
 
 /* Querying Google's by default. */
 $dnsquery = doh_encoderequest(doh_generate_dnsquery($domainname, $requesttype));
-$dnsrawresults = doh_connect_https("https://dns.google.com/experimental?ct&dns=$dnsquery");
+$dnsrawresults = doh_connect_https("$dohserver$dnsquery");
 
 
 $dnsresults = doh_read_dnsanswer($dnsrawresults, $requesttype);
