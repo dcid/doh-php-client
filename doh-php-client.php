@@ -133,7 +133,6 @@ function doh_connect_https($dnsquery)
     else
     {
         curl_setopt($ch, CURLOPT_URL, "https://dns.google.com/experimental?ct&dns=$dnsquery");
-        curl_setopt($ch, CURLOPT_POSTFIELDS, base64_decode($dnsquery)); 
     }
 
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
