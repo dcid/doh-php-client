@@ -106,16 +106,40 @@ function doh_encoderequest($request)
 }
 
 /* Connects via HTTPS to remote DoH servers */
-function doh_connect_https($url)
+function doh_connect_https($dnsquery)
 {
     $ch = curl_init();
-    $headers = array('Accept: application/dns-udpwireformat');
-    curl_setopt($ch, CURLOPT_URL, "$url");
+    $headers = array('Accept: application/dns-udpwireformat', 'Content-type: application/dns-udpwireformat');
+
+    global $argv;
+    if($argv[1] == "cloudflare-post")
+    {
+        curl_setopt($ch, CURLOPT_URL, "https://cloudflare-dns.com/dns-query"); // support POST
+        curl_setopt($ch, CURLOPT_POSTFIELDS, base64_decode($dnsquery));
+    }
+    if($argv[1] == "experimental-post")
+    {
+        curl_setopt($ch, CURLOPT_URL, "https://dns.google.com/experimental?ct");
+        curl_setopt($ch, CURLOPT_POSTFIELDS, base64_decode($dnsquery)); 
+    }
+    else if($argv[1] == "cloudflare")
+    {
+        curl_setopt($ch, CURLOPT_URL, "https://cloudflare-dns.com/dns-query?ct=application/dns-udpwireformat&dns=$dnsquery");
+    }
+    else if($argv[1] == "cleanbrowsing")
+    {
+        curl_setopt($ch, CURLOPT_URL, "https://doh.cleanbrowsing.org/doh/family-filter/?ct&dns=$dnsquery");
+    }
+    else
+    {
+        curl_setopt($ch, CURLOPT_URL, "https://dns.google.com/experimental?ct&dns=$dnsquery");
+    }
+
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($ch, CURLOPT_USERAGENT, 'DOH-Client-PHP');
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2); // true (or 1) removed in curl 7.28.1
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
     curl_setopt($ch, CURLOPT_TIMEOUT, 10);
@@ -211,23 +235,9 @@ function doh_read_dnsanswer($raw, $requesttype)
 /* Testing. */
 if(!isset($argv[2]))
 {
-    echo "Usage: ". $argv[0]. " [server:cloudflare,google,cleanbrowsing] [domain.com] <type: A, AAAA or CNAME>\n";
+    echo "Usage: ". $argv[0]. " [server:cloudflare,google,cleanbrowsing,cloudflare-post,experimental-post] [domain.com] <type: A, AAAA or CNAME>\n";
     exit(1);
 }
-
-if($argv[1] == "cloudflare")
-{
-    $dohserver = "https://cloudflare-dns.com/dns-query?ct=application/dns-udpwireformat&dns=";
-}
-else if($argv[1] == "cleanbrowsing")
-{
-    $dohserver = "https://doh.cleanbrowsing.org/doh/family-filter/?ct&dns=";
-}
-else
-{
-    $dohserver = "https://dns.google.com/experimental?ct&dns=";
-}
-
 
 $domainname = $argv[2];
 if(!isset($argv[3]))
@@ -243,11 +253,9 @@ else
 
 /* Querying Google's by default. */
 $dnsquery = doh_encoderequest(doh_generate_dnsquery($domainname, $requesttype));
-$dnsrawresults = doh_connect_https("$dohserver$dnsquery");
 
-
+$dnsrawresults = doh_connect_https($dnsquery);
 $dnsresults = doh_read_dnsanswer($dnsrawresults, $requesttype);
-
 
 if(empty($dnsresults))
 {
