@@ -71,12 +71,34 @@ function doh_connect_https($doh_url, $domain, $type) {
     $response_data = json_decode($response, true);
 
     if (!$response_data || !isset($response_data['Answer'])) {
-        die("Error: No valid response or DNS records found for {$domain}. Response: " . $response . "\n");
+        die("Error: No valid response or DNS records found for {$domain}. Response: " . json_encode($response_data) . "\n");
     }
 
     echo "DNS Records for {$domain}:\n";
     foreach ($response_data['Answer'] as $answer) {
-        echo "- Type: {$answer['type']} | Data: {$answer['data']}\n";
+        $record_type = $answer['type'];
+        $record_data = $answer['data'];
+
+        // Decode record type for human-readable output
+        switch ($record_type) {
+            case 1:  // A
+                echo "- A Record: {$record_data}\n";
+                break;
+            case 28: // AAAA
+                echo "- AAAA Record: {$record_data}\n";
+                break;
+            case 5:  // CNAME
+                echo "- CNAME Record: {$record_data}\n";
+                break;
+            case 15: // MX
+                echo "- MX Record: {$record_data}\n";
+                break;
+            case 2:  // NS
+                echo "- NS Record: {$record_data}\n";
+                break;
+            default:
+                echo "- Unknown Record (Type {$record_type}): {$record_data}\n";
+        }
     }
 }
 
