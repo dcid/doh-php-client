@@ -137,16 +137,20 @@ function doh_read_dnsanswer($response, $requesttype)
     // Debug raw response
     echo "Raw response (hex): " . bin2hex($response) . "\n";
 
+    // Parse DNS header
     $header = unpack("nTransactionID/nFlags/nQDCount/nANCount/nNSCount/nARCount", substr($response, 0, 12));
     print_r($header);
 
-    if ($header['nANCount'] === 0) {
+    $qdcount = $header['nQDCount'];
+    $ancount = $header['nANCount'];
+
+    if ($ancount === 0) {
         echo "No answers found in the response.\n";
         return $results;
     }
 
     // Skip question section
-    while ($header['nQDCount']-- > 0) {
+    while ($qdcount-- > 0) {
         while (ord($response[$offset]) > 0) {
             $offset += ord($response[$offset]) + 1;
         }
@@ -154,9 +158,9 @@ function doh_read_dnsanswer($response, $requesttype)
     }
 
     // Parse answer records
-    while ($header['nANCount']-- > 0) {
+    while ($ancount-- > 0) {
         $name = doh_raw2domain($response, $offset); // Decode domain name
-        $record = unpack("nType/nClass/NTimeToLive/nLength", substr($response, $offset, 10));
+        $record = unpack("nType/nClass/NTTL/nLength", substr($response, $offset, 10));
         $offset += 10;
 
         $data = substr($response, $offset, $record['nLength']);
@@ -165,14 +169,13 @@ function doh_read_dnsanswer($response, $requesttype)
         if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === "MX") {
                 $priority = unpack("n", substr($data, 0, 2))[1];
-                $host = doh_raw2domain($data, $offset);
+                $sub_offset = $offset - $record['nLength'] + 2;
+                $host = doh_raw2domain($data, $sub_offset);
                 $results[] = "Priority $priority - $host";
             } elseif ($requesttype === "NS") {
                 $results[] = doh_raw2domain($data, $offset);
             } elseif ($requesttype === "A" || $requesttype === "AAAA") {
                 $results[] = inet_ntop($data);
-            } else {
-                $results[] = $data;
             }
         }
     }
