@@ -132,7 +132,7 @@ function doh_connect_https($dnsquery)
 function doh_read_dnsanswer($response, $requesttype)
 {
     $results = [];
-    $offset = 12; // Start reading after the header
+    $offset = 12; // Start reading after the DNS header
 
     // Debug raw response
     echo "Raw response (hex): " . bin2hex($response) . "\n";
@@ -141,9 +141,11 @@ function doh_read_dnsanswer($response, $requesttype)
     $header = unpack("nTransactionID/nFlags/nQDCount/nANCount/nNSCount/nARCount", substr($response, 0, 12));
     print_r($header);
 
+    // Use local variables for counts
     $qdcount = $header['nQDCount'];
     $ancount = $header['nANCount'];
 
+    // If no answers, return early
     if ($ancount === 0) {
         echo "No answers found in the response.\n";
         return $results;
@@ -170,7 +172,7 @@ function doh_read_dnsanswer($response, $requesttype)
             if ($requesttype === "MX") {
                 $priority = unpack("n", substr($data, 0, 2))[1];
                 $sub_offset = $offset - $record['nLength'] + 2;
-                $host = doh_raw2domain($data, $sub_offset);
+                $host = doh_raw2domain($response, $sub_offset);
                 $results[] = "Priority $priority - $host";
             } elseif ($requesttype === "NS") {
                 $results[] = doh_raw2domain($data, $offset);
