@@ -96,7 +96,7 @@ function doh_read_dnsanswer($response, $requesttype) {
     }
 
     while ($header['ANCount']-- > 0) {
-        $offset += 2; // Name
+        $name = resolve_compressed_name($response, $offset);
         $record = unpack('nType/nClass/NTTL/nLength', substr($response, $offset, 10));
         $offset += 10;
 
@@ -106,10 +106,11 @@ function doh_read_dnsanswer($response, $requesttype) {
         if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === 'MX') {
                 $priority = unpack('n', substr($data, 0, 2))[1];
-                $host = doh_raw2domain(substr($data, 2));
+                $host = resolve_compressed_name($response, $offset - $record['Length'] + 2);
                 $results[] = "$host (priority $priority)";
             } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
-                $results[] = doh_raw2domain($data);
+                $host = resolve_compressed_name($response, $offset - $record['Length']);
+                $results[] = $host;
             } elseif ($requesttype === 'A' || $requesttype === 'AAAA') {
                 $results[] = inet_ntop($data);
             }
@@ -119,15 +120,32 @@ function doh_read_dnsanswer($response, $requesttype) {
     return $results;
 }
 
-function doh_raw2domain($qname) {
+function resolve_compressed_name($response, &$offset) {
     $domainname = "";
-    $len = ord($qname[0]);
-    $i = 1;
-    while ($len > 0) {
-        $domainname .= substr($qname, $i, $len) . ".";
-        $i += $len + 1;
-        $len = ord($qname[$i - 1]);
+    $jumps = 0;
+    $original_offset = $offset;
+
+    while (true) {
+        $len = ord($response[$offset]);
+        if ($len == 0) { // End of domain name
+            $offset++;
+            break;
+        }
+
+        if (($len & 0xC0) == 0xC0) { // Pointer
+            if ($jumps++ > 10) { // Avoid infinite loops
+                die("Error: Possible infinite pointer loop.\n");
+            }
+            $pointer_offset = unpack('n', substr($response, $offset, 2))[1] & 0x3FFF;
+            $offset += 2;
+            return $domainname . resolve_compressed_name($response, $pointer_offset);
+        } else {
+            $offset++;
+            $domainname .= substr($response, $offset, $len) . ".";
+            $offset += $len;
+        }
     }
+
     return rtrim($domainname, ".");
 }
 
