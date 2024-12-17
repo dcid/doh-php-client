@@ -78,24 +78,35 @@ function doh_raw2domain($qname, $response, &$offset) {
     $original_offset = $offset;
 
     while (true) {
+        if ($offset >= strlen($response)) {
+            die("Error: Offset out of bounds while parsing domain name.\n");
+        }
+
         $len = ord($qname[$offset]);
         if ($len === 0) {
             $offset++;
             break;
         }
 
+        // Handle compressed labels
         if (($len & 0xC0) === 0xC0) {
             if (!$jumped) {
-                $original_offset = $offset + 2;
+                $original_offset = $offset + 2; // Save current offset
             }
             $pointer_offset = (($len & 0x3F) << 8) | ord($qname[$offset + 1]);
+            if ($pointer_offset >= strlen($response)) {
+                die("Error: Pointer offset out of bounds.\n");
+            }
             $offset = $pointer_offset;
-            $qname = $response;
+            $qname = $response; // Switch to full response
             $jumped = true;
             continue;
         }
 
         $offset++;
+        if ($offset + $len > strlen($qname)) {
+            die("Error: Length out of bounds while parsing domain name.\n");
+        }
         $domainname .= substr($qname, $offset, $len) . ".";
         $offset += $len;
     }
@@ -116,11 +127,11 @@ function doh_read_dnsanswer($response, $requesttype) {
     }
 
     $offset = 12;
-    while ($header['QDCount']-- > 0) {
+    while ($header['QDCount']-- > 0) { // Skip Questions
         while (ord($response[$offset]) > 0) {
             $offset += ord($response[$offset]) + 1;
         }
-        $offset += 5;
+        $offset += 5; // Null byte + QTYPE + QCLASS
     }
 
     while ($header['ANCount']-- > 0) {
@@ -133,6 +144,9 @@ function doh_read_dnsanswer($response, $requesttype) {
 
         if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === 'MX') {
+                if (strlen($data) < 2) {
+                    die("Error: MX record data too short.\n");
+                }
                 $priority = unpack('n', substr($data, 0, 2))[1];
                 $host = doh_raw2domain($data, $response, $offset);
                 $results[] = "$host (priority $priority)";
@@ -145,19 +159,4 @@ function doh_read_dnsanswer($response, $requesttype) {
     }
 
     return $results;
-}
-
-$dnsquery = doh_generate_dnsquery($domain, $requesttype);
-$response = doh_connect_https($doh_url, $dnsquery);
-echo "Debug: Raw response: " . bin2hex($response) . "\n";
-
-$results = doh_read_dnsanswer($response, $requesttype);
-
-if (empty($results)) {
-    die("No records found for $domain ($requesttype).\n");
-}
-
-echo "DNS Records for $domain ($requesttype):\n";
-foreach ($results as $record) {
-    echo "- $record\n";
 }
