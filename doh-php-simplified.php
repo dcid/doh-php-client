@@ -114,58 +114,6 @@ function doh_raw2domain($response, &$offset) {
     return rtrim($domainname, ".");
 }
 
-function doh_read_dnsanswer($response, $requesttype) {
-    $results = [];
-    $header = unpack('nID/nFlags/nQDCount/nANCount/nNSCount/nARCount', substr($response, 0, 12));
-    if ($header['ANCount'] == 0) {
-        echo "Debug: No answers found in the response.\n";
-        return $results;
-    }
-
-    $offset = 12;
-
-    // Skip Questions
-    while ($header['QDCount']-- > 0) {
-        while (ord($response[$offset]) > 0) {
-            $offset += ord($response[$offset]) + 1;
-        }
-        $offset += 5; // Null byte + QTYPE + QCLASS
-    }
-
-    // Parse Answer Records
-    while ($header['ANCount']-- > 0) {
-        $name = doh_raw2domain($response, $offset);
-
-        if (strlen($response) < $offset + 10) {
-            die("Error: Response too short to parse record.\n");
-        }
-        $record = unpack('nType/nClass/NTTL/nLength', substr($response, $offset, 10));
-        $offset += 10;
-
-        if (strlen($response) < $offset + $record['Length']) {
-            die("Error: Record length exceeds response size.\n");
-        }
-        $data = substr($response, $offset, $record['Length']);
-        $offset += $record['Length'];
-
-        if ($record['Type'] == doh_get_qtypes($requesttype)) {
-            if ($requesttype === 'MX') {
-                // Parse MX record
-                $priority = unpack('n', substr($data, 0, 2))[1];
-                $sub_offset = $offset - $record['Length'] + 2;
-                $host = doh_raw2domain($response, $sub_offset);
-                $results[] = "$host (priority $priority)";
-            } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
-                $results[] = doh_raw2domain($response, $offset - $record['Length']);
-            } elseif ($requesttype === 'A' || $requesttype === 'AAAA') {
-                $results[] = inet_ntop($data);
-            }
-        }
-    }
-
-    return $results;
-}
-
 $dnsquery = doh_generate_dnsquery($domain, $requesttype);
 $response = doh_connect_https($doh_url, $dnsquery);
 echo "Debug: Raw response: " . bin2hex($response) . "\n";
