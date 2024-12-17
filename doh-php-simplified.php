@@ -134,9 +134,9 @@ function doh_read_dnsanswer($response, $requesttype)
     $results = [];
     $offset = 12;
 
-    $header = unpack("nID/nFlags/nQDCount/nANCount/nNSCount/nARCount", substr($response, 0, 12));
+    $header = unpack("nTransactionID/nFlags/nQDCount/nANCount/nNSCount/nARCount", substr($response, 0, 12));
 
-    if ($header['nANCount'] === 0) {
+    if (empty($header['nANCount'])) {
         echo "No answers found in the response.\n";
         return $results;
     }
