@@ -113,28 +113,38 @@ function doh_read_dnsanswer($response, $requesttype) {
     return $results;
 }
 
-function doh_raw2domain($qname) {
+function doh_raw2domain($qname, $response, &$offset) {
     $domainname = "";
-    $len = ord($qname[0]);
-    $i = 1;
-    while ($len > 0) {
-        $domainname .= substr($qname, $i, $len) . ".";
-        $i += $len + 1;
-        $len = ord($qname[$i - 1]);
+    $jumped = false;
+    $original_offset = $offset;
+
+    while (true) {
+        $len = ord($qname[$offset]);
+        if ($len === 0) {
+            $offset++;
+            break;
+        }
+
+        // Check if the label is a pointer
+        if (($len & 0xC0) === 0xC0) {
+            if (!$jumped) {
+                $original_offset = $offset + 2; // Save the current offset for later
+            }
+            $pointer_offset = (($len & 0x3F) << 8) | ord($qname[$offset + 1]);
+            $offset = $pointer_offset;
+            $qname = $response; // Switch to the full response
+            $jumped = true;
+            continue;
+        }
+
+        $offset++;
+        $domainname .= substr($qname, $offset, $len) . ".";
+        $offset += $len;
     }
+
+    if (!$jumped) {
+        $offset = $original_offset;
+    }
+
     return rtrim($domainname, ".");
-}
-
-/* Main */
-$dnsquery = doh_generate_dnsquery($domain, $requesttype);
-$response = doh_connect_https($doh_url, $dnsquery);
-$results = doh_read_dnsanswer($response, $requesttype);
-
-if (empty($results)) {
-    die("No records found for $domain ($requesttype).\n");
-}
-
-echo "DNS Records for $domain ($requesttype):\n";
-foreach ($results as $record) {
-    echo "- $record\n";
 }
