@@ -1,13 +1,19 @@
 <?php
 
 if ($argc < 3) {
-    die("Usage: php {$argv[0]} [server|custom] [domain] [type: A, AAAA, CNAME] [custom_url]\n");
+    die("Usage: php {$argv[0]} [server|custom] [domain] [type: A, AAAA, CNAME, MX, NS] [custom_url]\n");
 }
 
 $server = $argv[1];
 $domain = $argv[2];
 $type = isset($argv[3]) ? strtoupper($argv[3]) : 'A';
 $custom_url = isset($argv[4]) ? $argv[4] : null;
+
+// Supported DNS record types
+$supported_types = ['A', 'AAAA', 'CNAME', 'MX', 'NS'];
+if (!in_array($type, $supported_types)) {
+    die("Error: Record type '$type' not supported. Supported types are: " . implode(', ', $supported_types) . "\n");
+}
 
 switch ($server) {
     case 'cloudflare':
