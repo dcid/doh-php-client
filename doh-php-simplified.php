@@ -142,8 +142,8 @@ function doh_read_dnsanswer($response, $requesttype)
     print_r($header);
 
     // Use local variables for counts
-    $qdcount = $header['nQDCount'];
-    $ancount = $header['nANCount'];
+    $qdcount = $header['QDCount'];
+    $ancount = $header['ANCount'];
 
     // If no answers, return early
     if ($ancount === 0) {
