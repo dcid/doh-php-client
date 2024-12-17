@@ -1,10 +1,7 @@
 <?php
 
 /* PHP client implementation of DoH (DNS over HTTPS).
- * Based on: https://tools.ietf.org/html/draft-ietf-doh-dns-over-https-01
  * Supports A, AAAA, CNAME, MX, and NS records.
- * Author: dcid
- * License: GPLv3
  */
 
 /* Domain str to DNS raw qname */
@@ -32,6 +29,7 @@ function doh_raw2domain($response, &$offset)
         }
 
         $len = ord($response[$offset]);
+
         if ($len === 0) {
             $offset++;
             break;
@@ -48,6 +46,9 @@ function doh_raw2domain($response, &$offset)
         }
 
         $offset++;
+        if ($offset + $len > strlen($response)) {
+            die("Error: Length out of bounds while parsing domain name.\n");
+        }
         $domainname .= substr($response, $offset, $len) . ".";
         $offset += $len;
     }
@@ -91,19 +92,29 @@ function doh_generate_dnsquery($domainname, $requesttype = "A")
 function doh_connect_https($dnsquery)
 {
     global $argv;
+
+    // Base64URL encode the DNS query
+    $encoded_dnsquery = str_replace(
+        ['+', '/', '='],
+        ['-', '_', ''],
+        base64_encode($dnsquery)
+    );
+
+    // Determine the DoH server URL
     $doh_url = match ($argv[1]) {
-        "cloudflare" => "https://cloudflare-dns.com/dns-query?dns=$dnsquery",
-        "google" => "https://dns.google/dns-query?dns=$dnsquery",
-        "cleanbrowsing" => "https://doh.cleanbrowsing.org/doh/family-filter/?dns=$dnsquery",
+        "cloudflare" => "https://cloudflare-dns.com/dns-query?dns=$encoded_dnsquery",
+        "google" => "https://dns.google/dns-query?dns=$encoded_dnsquery",
+        "cleanbrowsing" => "https://doh.cleanbrowsing.org/doh/family-filter/?dns=$encoded_dnsquery",
         default => die("Error: Unsupported DoH server.\n"),
     };
 
+    // Set up cURL request
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $doh_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Accept: application/dns-udpwireformat',
-        'Content-Type: application/dns-udpwireformat',
+        'Accept: application/dns-message',
+        'Content-Type: application/dns-message',
     ]);
 
     $response = curl_exec($ch);
