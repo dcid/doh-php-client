@@ -106,10 +106,12 @@ function doh_read_dnsanswer($response, $requesttype) {
         if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === 'MX') {
                 $priority = unpack('n', substr($data, 0, 2))[1];
-                $host = resolve_compressed_name($response, $offset - $record['Length'] + 2);
+                $mx_offset = $offset - $record['Length'] + 2;
+                $host = resolve_compressed_name($response, $mx_offset);
                 $results[] = "$host (priority $priority)";
             } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
-                $host = resolve_compressed_name($response, $offset - $record['Length']);
+                $ns_offset = $offset - $record['Length'];
+                $host = resolve_compressed_name($response, $ns_offset);
                 $results[] = $host;
             } elseif ($requesttype === 'A' || $requesttype === 'AAAA') {
                 $results[] = inet_ntop($data);
@@ -123,7 +125,6 @@ function doh_read_dnsanswer($response, $requesttype) {
 function resolve_compressed_name($response, &$offset) {
     $domainname = "";
     $jumps = 0;
-    $original_offset = $offset;
 
     while (true) {
         $len = ord($response[$offset]);
@@ -136,8 +137,8 @@ function resolve_compressed_name($response, &$offset) {
             if ($jumps++ > 10) { // Avoid infinite loops
                 die("Error: Possible infinite pointer loop.\n");
             }
-            $pointer_offset = unpack('n', substr($response, $offset, 2))[1] & 0x3FFF;
-            $offset += 2;
+            $pointer_offset = (($len & 0x3F) << 8) | ord($response[$offset + 1]);
+            $offset += 2; // Move past the pointer
             return $domainname . resolve_compressed_name($response, $pointer_offset);
         } else {
             $offset++;
