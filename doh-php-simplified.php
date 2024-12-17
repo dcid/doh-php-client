@@ -42,7 +42,7 @@ function doh_connect_https($doh_url, $domain, $type) {
     // Prepare DNS query parameters
     $params = http_build_query([
         'name' => $domain,
-        'type' => $type,
+        'type' => $type, // Ensure the type is explicitly passed
     ]);
 
     // Build full DoH query URL
