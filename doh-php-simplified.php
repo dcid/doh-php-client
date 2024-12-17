@@ -88,17 +88,16 @@ function doh_raw2domain($qname, $response, &$offset) {
             break;
         }
 
-        // Handle compressed labels
         if (($len & 0xC0) === 0xC0) {
             if (!$jumped) {
-                $original_offset = $offset + 2; // Save current offset
+                $original_offset = $offset + 2;
             }
             $pointer_offset = (($len & 0x3F) << 8) | ord($qname[$offset + 1]);
             if ($pointer_offset >= strlen($response)) {
                 die("Error: Pointer offset out of bounds.\n");
             }
             $offset = $pointer_offset;
-            $qname = $response; // Switch to full response
+            $qname = $response;
             $jumped = true;
             continue;
         }
@@ -127,11 +126,11 @@ function doh_read_dnsanswer($response, $requesttype) {
     }
 
     $offset = 12;
-    while ($header['QDCount']-- > 0) { // Skip Questions
+    while ($header['QDCount']-- > 0) {
         while (ord($response[$offset]) > 0) {
             $offset += ord($response[$offset]) + 1;
         }
-        $offset += 5; // Null byte + QTYPE + QCLASS
+        $offset += 5;
     }
 
     while ($header['ANCount']-- > 0) {
@@ -148,8 +147,8 @@ function doh_read_dnsanswer($response, $requesttype) {
                     die("Error: MX record data too short.\n");
                 }
                 $priority = unpack('n', substr($data, 0, 2))[1];
-                $sub_offset = 2; // Start decoding after the priority field
-                $host = doh_raw2domain($data, $response, $sub_offset);
+                $sub_offset = 2;
+                $host = doh_raw2domain($response, $response, $offset - $record['Length'] + $sub_offset);
                 $results[] = "$host (priority $priority)";
             } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
                 $results[] = doh_raw2domain($data, $response, $offset);
