@@ -162,16 +162,16 @@ function doh_read_dnsanswer($response, $requesttype)
     // Parse answer records
     while ($ancount-- > 0) {
         $name = doh_raw2domain($response, $offset); // Decode domain name
-        $record = unpack("nType/nClass/NTTL/nLength", substr($response, $offset, 10));
+        $record = unpack("nType/nClass/NTimeToLive/nLength", substr($response, $offset, 10));
         $offset += 10;
 
-        $data = substr($response, $offset, $record['nLength']);
-        $offset += $record['nLength'];
+        $data = substr($response, $offset, $record['Length']);
+        $offset += $record['Length'];
 
         if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === "MX") {
                 $priority = unpack("n", substr($data, 0, 2))[1];
-                $sub_offset = $offset - $record['nLength'] + 2;
+                $sub_offset = $offset - $record['Length'] + 2;
                 $host = doh_raw2domain($response, $sub_offset);
                 $results[] = "Priority $priority - $host";
             } elseif ($requesttype === "NS") {
