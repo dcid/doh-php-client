@@ -138,7 +138,8 @@ function doh_read_dnsanswer($response, $requesttype)
                 $host = doh_raw2domain($response, $host_offset);
                 $results[] = "$host (priority $priority)";
             } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
-                $results[] = doh_raw2domain($data, $offset);
+                $host_offset = $offset - $record['Length'];
+                $results[] = doh_raw2domain($response, $host_offset);
             } elseif ($requesttype === 'A' || $requesttype === 'AAAA') {
                 $results[] = inet_ntop($data);
             }
