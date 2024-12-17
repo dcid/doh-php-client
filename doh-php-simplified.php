@@ -134,14 +134,15 @@ function doh_read_dnsanswer($response, $requesttype)
     $results = [];
     $offset = 12;
 
-    $header = unpack("nid/nspec/nqdcount/nancount/nnscount/narcount", substr($response, 0, 12));
-    if ($header['nancount'] === 0) {
+    $header = unpack("nID/nFlags/nQDCount/nANCount/nNSCount/nARCount", substr($response, 0, 12));
+
+    if ($header['nANCount'] === 0) {
         echo "No answers found in the response.\n";
         return $results;
     }
 
     // Skip questions
-    while ($header['nqdcount']-- > 0) {
+    while ($header['nQDCount']-- > 0) {
         while (ord($response[$offset]) > 0) {
             $offset += ord($response[$offset]) + 1;
         }
@@ -149,23 +150,23 @@ function doh_read_dnsanswer($response, $requesttype)
     }
 
     // Parse answer records
-    while ($header['nancount']-- > 0) {
+    while ($header['nANCount']-- > 0) {
         $name = doh_raw2domain($response, $offset);
 
-        $record = unpack("ntype/nclass/nttl/nlength", substr($response, $offset, 10));
+        $record = unpack("nType/nClass/NTTL/nLength", substr($response, $offset, 10));
         $offset += 10;
 
-        $data = substr($response, $offset, $record['nlength']);
-        $offset += $record['nlength'];
+        $data = substr($response, $offset, $record['nLength']);
+        $offset += $record['nLength'];
 
-        if ($record['type'] == doh_get_qtypes($requesttype)) {
+        if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === "MX") {
                 $priority = unpack("n", substr($data, 0, 2))[1];
-                $sub_offset = $offset - $record['nlength'] + 2;
+                $sub_offset = $offset - $record['nLength'] + 2;
                 $host = doh_raw2domain($response, $sub_offset);
                 $results[] = "Priority $priority - $host";
             } elseif ($requesttype === "NS") {
-                $results[] = doh_raw2domain($response, $offset - $record['nlength']);
+                $results[] = doh_raw2domain($response, $offset - $record['nLength']);
             }
         }
     }
