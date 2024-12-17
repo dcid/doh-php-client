@@ -1,29 +1,34 @@
 <?php
 
 if ($argc < 3) {
-    die("Usage: php {$argv[0]} [server: cloudflare, google, cleanbrowsing] [domain] [type: A, AAAA, CNAME, MX, NS]\n");
+    die("Usage: php {$argv[0]} [server: cloudflare, google, cleanbrowsing, custom] [domain] [type: A, AAAA, CNAME, MX, NS] [custom_url if server=custom]\n");
 }
 
 $server = $argv[1];
 $domain = $argv[2];
 $requesttype = isset($argv[3]) ? strtoupper($argv[3]) : 'A';
+$custom_url = isset($argv[4]) ? $argv[4] : null;
 
 // Supported DoH servers
 $servers = [
     'cloudflare' => 'https://cloudflare-dns.com/dns-query',
     'google' => 'https://dns.google/dns-query',
     'cleanbrowsing' => 'https://doh.cleanbrowsing.org/doh/family-filter/dns-query',
+    'custom' => $custom_url,
 ];
 
 if (!isset($servers[$server])) {
-    die("Error: Unsupported server '$server'. Use 'cloudflare', 'google', or 'cleanbrowsing'.\n");
+    die("Error: Unsupported server '$server'. Use 'cloudflare', 'google', 'cleanbrowsing', or 'custom'.\n");
+}
+
+if ($server === 'custom' && !$custom_url) {
+    die("Error: When using 'custom', you must provide a custom DoH URL as the fourth argument.\n");
 }
 
 $doh_url = $servers[$server];
 
 /* DNS Functions */
-function doh_domain2raw($domainname)
-{
+function doh_domain2raw($domainname) {
     $raw = "";
     foreach (explode('.', $domainname) as $domainbit) {
         $raw .= chr(strlen($domainbit)) . $domainbit;
@@ -31,28 +36,25 @@ function doh_domain2raw($domainname)
     return $raw . chr(0);
 }
 
-function doh_get_qtypes($requesttype)
-{
+function doh_get_qtypes($requesttype) {
     $types = ['A' => 1, 'AAAA' => 28, 'CNAME' => 5, 'MX' => 15, 'NS' => 2];
     return $types[$requesttype] ?? 1; // Default to 'A'
 }
 
-function doh_generate_dnsquery($domainname, $requesttype)
-{
+function doh_generate_dnsquery($domainname, $requesttype) {
     $rawtype = doh_get_qtypes($requesttype);
     return "\xab\xcd" . // Transaction ID
-        "\x01\x00" .   // Flags: standard query
-        "\x00\x01" .   // Questions
-        "\x00\x00" .   // Answer RRs
-        "\x00\x00" .   // Authority RRs
-        "\x00\x00" .   // Additional RRs
-        doh_domain2raw($domainname) .
-        chr(0) . chr($rawtype) . // QTYPE
-        chr(0) . chr(1);         // QCLASS (IN)
+           "\x01\x00" . // Flags: standard query
+           "\x00\x01" . // Questions
+           "\x00\x00" . // Answer RRs
+           "\x00\x00" . // Authority RRs
+           "\x00\x00" . // Additional RRs
+           doh_domain2raw($domainname) .
+           chr(0) . chr($rawtype) . // QTYPE
+           chr(0) . chr(1);         // QCLASS (IN)
 }
 
-function doh_connect_https($doh_url, $dnsquery)
-{
+function doh_connect_https($doh_url, $dnsquery) {
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $doh_url);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -78,53 +80,23 @@ function doh_connect_https($doh_url, $dnsquery)
     return $response;
 }
 
-function doh_raw2domain($response, &$offset)
-{
-    $labels = [];
-    $limit = strlen($response);
-
-    while ($offset < $limit) {
-        $length = ord($response[$offset]);
-
-        if ($length === 0) {
-            $offset++;
-            break;
-        } elseif (($length & 0xC0) === 0xC0) {
-            $pointer = (($length & 0x3F) << 8) | ord($response[$offset + 1]);
-            $offset += 2;
-            $labels[] = doh_raw2domain($response, $pointer);
-            break;
-        } else {
-            $offset++;
-            $labels[] = substr($response, $offset, $length);
-            $offset += $length;
-        }
-    }
-
-    return implode('.', $labels);
-}
-
-function doh_read_dnsanswer($response, $requesttype)
-{
+function doh_read_dnsanswer($response, $requesttype) {
     $results = [];
-    $offset = 12;
-
-    $header = unpack('nTransactionID/nFlags/nQDCount/nANCount/nNSCount/nARCount', substr($response, 0, 12));
+    $header = unpack('nID/nFlags/nQDCount/nANCount/nNSCount/nARCount', substr($response, 0, 12));
     if ($header['ANCount'] == 0) {
         return $results;
     }
 
-    // Skip questions
-    while ($header['QDCount']-- > 0) {
+    $offset = 12; // Skip the header
+    while ($header['QDCount']-- > 0) { // Skip Questions
         while (ord($response[$offset]) > 0) {
             $offset += ord($response[$offset]) + 1;
         }
         $offset += 5; // Null byte + QTYPE + QCLASS
     }
 
-    // Process answers
     while ($header['ANCount']-- > 0) {
-        $name = doh_raw2domain($response, $offset);
+        $offset += 2; // Name
         $record = unpack('nType/nClass/NTTL/nLength', substr($response, $offset, 10));
         $offset += 10;
 
@@ -134,12 +106,10 @@ function doh_read_dnsanswer($response, $requesttype)
         if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === 'MX') {
                 $priority = unpack('n', substr($data, 0, 2))[1];
-                $host_offset = $offset - $record['Length'] + 2;
-                $host = doh_raw2domain($response, $host_offset);
+                $host = doh_raw2domain(substr($data, 2));
                 $results[] = "$host (priority $priority)";
             } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
-                $host_offset = $offset - $record['Length'];
-                $results[] = doh_raw2domain($response, $host_offset);
+                $results[] = doh_raw2domain($data);
             } elseif ($requesttype === 'A' || $requesttype === 'AAAA') {
                 $results[] = inet_ntop($data);
             }
@@ -147,6 +117,18 @@ function doh_read_dnsanswer($response, $requesttype)
     }
 
     return $results;
+}
+
+function doh_raw2domain($qname) {
+    $domainname = "";
+    $len = ord($qname[0]);
+    $i = 1;
+    while ($len > 0) {
+        $domainname .= substr($qname, $i, $len) . ".";
+        $i += $len + 1;
+        $len = ord($qname[$i - 1]);
+    }
+    return rtrim($domainname, ".");
 }
 
 /* Main */
