@@ -123,15 +123,19 @@ function doh_read_dnsanswer($response, $requesttype) {
     }
 
     $offset = 12;
+
+    // Skip Questions
     while ($header['QDCount']-- > 0) {
         while (ord($response[$offset]) > 0) {
             $offset += ord($response[$offset]) + 1;
         }
-        $offset += 5;
+        $offset += 5; // Null byte + QTYPE + QCLASS
     }
 
+    // Parse Answer Records
     while ($header['ANCount']-- > 0) {
         $name = doh_raw2domain($response, $offset);
+
         if (strlen($response) < $offset + 10) {
             die("Error: Response too short to parse record.\n");
         }
