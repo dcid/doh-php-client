@@ -72,7 +72,7 @@ function doh_connect_https($doh_url, $dnsquery) {
     return $response;
 }
 
-function doh_raw2domain($qname, $response, &$offset) {
+function doh_raw2domain($response, &$offset) {
     $domainname = "";
     $jumped = false;
     $original_offset = $offset;
@@ -82,31 +82,31 @@ function doh_raw2domain($qname, $response, &$offset) {
             die("Error: Offset out of bounds while parsing domain name.\n");
         }
 
-        $len = ord($qname[$offset]);
+        $len = ord($response[$offset]);
         if ($len === 0) {
             $offset++;
             break;
         }
 
+        // Handle compressed labels
         if (($len & 0xC0) === 0xC0) {
             if (!$jumped) {
-                $original_offset = $offset + 2;
+                $original_offset = $offset + 2; // Save current offset
             }
-            $pointer_offset = (($len & 0x3F) << 8) | ord($qname[$offset + 1]);
+            $pointer_offset = (($len & 0x3F) << 8) | ord($response[$offset + 1]);
             if ($pointer_offset >= strlen($response)) {
                 die("Error: Pointer offset out of bounds.\n");
             }
             $offset = $pointer_offset;
-            $qname = $response;
             $jumped = true;
             continue;
         }
 
         $offset++;
-        if ($offset + $len > strlen($qname)) {
+        if ($offset + $len > strlen($response)) {
             die("Error: Length out of bounds while parsing domain name.\n");
         }
-        $domainname .= substr($qname, $offset, $len) . ".";
+        $domainname .= substr($response, $offset, $len) . ".";
         $offset += $len;
     }
 
@@ -126,15 +126,15 @@ function doh_read_dnsanswer($response, $requesttype) {
     }
 
     $offset = 12;
-    while ($header['QDCount']-- > 0) {
+    while ($header['QDCount']-- > 0) { // Skip Questions
         while (ord($response[$offset]) > 0) {
             $offset += ord($response[$offset]) + 1;
         }
-        $offset += 5;
+        $offset += 5; // Null byte + QTYPE + QCLASS
     }
 
     while ($header['ANCount']-- > 0) {
-        $name = doh_raw2domain($response, $response, $offset);
+        $name = doh_raw2domain($response, $offset);
         $record = unpack('nType/nClass/NTTL/nLength', substr($response, $offset, 10));
         $offset += 10;
 
@@ -143,15 +143,12 @@ function doh_read_dnsanswer($response, $requesttype) {
 
         if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === 'MX') {
-                if (strlen($data) < 2) {
-                    die("Error: MX record data too short.\n");
-                }
                 $priority = unpack('n', substr($data, 0, 2))[1];
-                $sub_offset = 2;
-                $host = doh_raw2domain($response, $response, $offset - $record['Length'] + $sub_offset);
+                $sub_offset = $offset - $record['Length'] + 2; // Start after priority
+                $host = doh_raw2domain($response, $sub_offset);
                 $results[] = "$host (priority $priority)";
             } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
-                $results[] = doh_raw2domain($data, $response, $offset);
+                $results[] = doh_raw2domain($data, $offset);
             } elseif ($requesttype === 'A' || $requesttype === 'AAAA') {
                 $results[] = inet_ntop($data);
             }
