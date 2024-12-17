@@ -160,3 +160,18 @@ function doh_read_dnsanswer($response, $requesttype) {
 
     return $results;
 }
+
+$dnsquery = doh_generate_dnsquery($domain, $requesttype);
+$response = doh_connect_https($doh_url, $dnsquery);
+echo "Debug: Raw response: " . bin2hex($response) . "\n";
+
+$results = doh_read_dnsanswer($response, $requesttype);
+
+if (empty($results)) {
+    die("No records found for $domain ($requesttype).\n");
+}
+
+echo "DNS Records for $domain ($requesttype):\n";
+foreach ($results as $record) {
+    echo "- $record\n";
+}
