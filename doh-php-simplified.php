@@ -6,7 +6,7 @@ if ($argc < 3) {
 
 $server = $argv[1];
 $domain = $argv[2];
-$type = isset($argv[3]) ? $argv[3] : 'A';
+$type = isset($argv[3]) ? strtoupper($argv[3]) : 'A';
 $custom_url = isset($argv[4]) ? $argv[4] : null;
 
 switch ($server) {
@@ -33,15 +33,17 @@ switch ($server) {
 }
 
 function doh_connect_https($doh_url, $domain, $type) {
-    $dns_query = [
+    // Prepare DNS query parameters
+    $params = http_build_query([
         'name' => $domain,
         'type' => $type,
-    ];
+    ]);
 
-    $encoded_query = base64_encode(json_encode($dns_query));
+    // Build full DoH query URL
+    $url = $doh_url . '?' . $params;
 
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $doh_url . '?dns=' . $encoded_query);
+    curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Accept: application/dns-json',
@@ -53,12 +55,17 @@ function doh_connect_https($doh_url, $domain, $type) {
         die("cURL error: " . curl_error($ch) . "\n");
     }
 
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    if ($http_code !== 200) {
+        die("Error: DoH server responded with HTTP status $http_code.\n");
+    }
+
     curl_close($ch);
 
     $response_data = json_decode($response, true);
 
     if (!$response_data || !isset($response_data['Answer'])) {
-        die("Error: No valid response or DNS records found for {$domain}.\n");
+        die("Error: No valid response or DNS records found for {$domain}. Response: " . $response . "\n");
     }
 
     echo "DNS Records for {$domain}:\n";
