@@ -150,9 +150,7 @@ function doh_read_dnsanswer($response, $requesttype) {
 
         if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === 'MX') {
-                if (strlen($data) < 2) {
-                    die("Error: MX record data too short.\n");
-                }
+                // Parse MX record
                 $priority = unpack('n', substr($data, 0, 2))[1];
                 $sub_offset = $offset - $record['Length'] + 2;
                 $host = doh_raw2domain($response, $sub_offset);
