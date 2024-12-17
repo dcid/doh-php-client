@@ -1,105 +1,131 @@
 <?php
 
+/* DNS over HTTPS (DoH) Client */
+
 if ($argc < 3) {
-    die("Usage: php {$argv[0]} [server|custom] [domain] [type: A, AAAA, CNAME, MX, NS] [custom_url]\n");
+    die("Usage: php {$argv[0]} [server:cloudflare,google,cleanbrowsing] [domain] [type: A, AAAA, CNAME, MX, NS]\n");
 }
 
 $server = $argv[1];
 $domain = $argv[2];
-$type = isset($argv[3]) ? strtoupper($argv[3]) : 'A';
-$custom_url = isset($argv[4]) ? $argv[4] : null;
+$requesttype = isset($argv[3]) ? strtoupper($argv[3]) : 'A';
 
-// Supported DNS record types
+// Supported record types
 $supported_types = ['A', 'AAAA', 'CNAME', 'MX', 'NS'];
-if (!in_array($type, $supported_types)) {
-    die("Error: Record type '$type' not supported. Supported types are: " . implode(', ', $supported_types) . "\n");
+if (!in_array($requesttype, $supported_types)) {
+    die("Error: Record type '$requesttype' not supported. Supported types are: " . implode(', ', $supported_types) . "\n");
 }
 
-switch ($server) {
-    case 'cloudflare':
-        $doh_url = 'https://cloudflare-dns.com/dns-query';
-        break;
-    case 'google':
-        $doh_url = 'https://dns.google/dns-query';
-        break;
-    case 'cleanbrowsing':
-        $doh_url = 'https://doh.cleanbrowsing.org/doh/family-filter/';
-        break;
-    case 'custom':
-        if (!$custom_url) {
-            die("Error: Custom URL not provided. Use: php {$argv[0]} custom [domain] [type] [custom_url]\n");
-        }
-        if (!filter_var($custom_url, FILTER_VALIDATE_URL)) {
-            die("Error: Invalid custom URL provided.\n");
-        }
-        $doh_url = $custom_url;
-        break;
-    default:
-        die("Error: Unsupported server. Use 'cloudflare', 'google', 'cleanbrowsing', or 'custom'.\n");
+// Define DoH servers
+$servers = [
+    'cloudflare' => 'https://cloudflare-dns.com/dns-query',
+    'google' => 'https://dns.google/dns-query',
+    'cleanbrowsing' => 'https://doh.cleanbrowsing.org/doh/family-filter/',
+];
+
+if (!isset($servers[$server])) {
+    die("Error: Unsupported server '$server'. Use 'cloudflare', 'google', or 'cleanbrowsing'.\n");
 }
 
-function doh_connect_https($doh_url, $domain, $type) {
-    // Prepare DNS query parameters
-    $params = http_build_query([
-        'name' => $domain,
-        'type' => $type, // Ensure the type is explicitly passed
-    ]);
+$doh_url = $servers[$server];
 
-    // Build full DoH query URL
-    $url = $doh_url . '?' . $params;
+/* DNS Functions */
+function doh_domain2raw($domainname) {
+    $raw = "";
+    foreach (explode('.', $domainname) as $domainbit) {
+        $raw .= chr(strlen($domainbit)) . $domainbit;
+    }
+    return $raw . chr(0);
+}
 
+function doh_get_qtypes($requesttype) {
+    $types = ['A' => 1, 'AAAA' => 28, 'CNAME' => 5, 'MX' => 15, 'NS' => 2];
+    return $types[$requesttype] ?? 1; // Default to 'A'
+}
+
+function doh_generate_dnsquery($domainname, $requesttype) {
+    $rawtype = doh_get_qtypes($requesttype);
+    return "\xab\xcd" . // Transaction ID
+           "\x01\x00" . // Flags: standard query
+           "\x00\x01" . // Questions
+           "\x00\x00" . // Answer RRs
+           "\x00\x00" . // Authority RRs
+           "\x00\x00" . // Additional RRs
+           doh_domain2raw($domainname) .
+           chr(0) . chr($rawtype) . // QTYPE
+           chr(0) . chr(1);         // QCLASS (IN)
+}
+
+function doh_connect_https($doh_url, $dnsquery) {
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_URL, $doh_url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $dnsquery);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Accept: application/dns-json',
+        'Content-Type: application/dns-udpwireformat',
+        'Accept: application/dns-udpwireformat',
     ]);
-
     $response = curl_exec($ch);
 
     if (curl_errno($ch)) {
         die("cURL error: " . curl_error($ch) . "\n");
     }
 
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    if ($http_code !== 200) {
-        die("Error: DoH server responded with HTTP status $http_code.\n");
-    }
-
     curl_close($ch);
 
-    $response_data = json_decode($response, true);
-
-    if (!$response_data || !isset($response_data['Answer'])) {
-        die("Error: No valid response or DNS records found for {$domain}. Response: " . json_encode($response_data) . "\n");
-    }
-
-    echo "DNS Records for {$domain}:\n";
-    foreach ($response_data['Answer'] as $answer) {
-        $record_type = $answer['type'];
-        $record_data = $answer['data'];
-
-        // Decode record type for human-readable output
-        switch ($record_type) {
-            case 1:  // A
-                echo "- A Record: {$record_data}\n";
-                break;
-            case 28: // AAAA
-                echo "- AAAA Record: {$record_data}\n";
-                break;
-            case 5:  // CNAME
-                echo "- CNAME Record: {$record_data}\n";
-                break;
-            case 15: // MX
-                echo "- MX Record: {$record_data}\n";
-                break;
-            case 2:  // NS
-                echo "- NS Record: {$record_data}\n";
-                break;
-            default:
-                echo "- Unknown Record (Type {$record_type}): {$record_data}\n";
-        }
-    }
+    return $response;
 }
 
-doh_connect_https($doh_url, $domain, $type);
+function doh_read_dnsanswer($response, $requesttype) {
+    $results = [];
+    $header = unpack('nID/nFlags/nQDCount/nANCount/nNSCount/nARCount', substr($response, 0, 12));
+    if ($header['ANCount'] == 0) {
+        return $results;
+    }
+
+    $offset = 12; // Skip the header
+    while ($header['QDCount']-- > 0) { // Skip Questions
+        while (ord($response[$offset]) > 0) {
+            $offset += ord($response[$offset]) + 1;
+        }
+        $offset += 5; // Null byte + QTYPE + QCLASS
+    }
+
+    while ($header['ANCount']-- > 0) {
+        $offset += 2; // Name
+        $record = unpack('nType/nClass/NTTL/nLength', substr($response, $offset, 10));
+        $offset += 10;
+
+        $data = substr($response, $offset, $record['Length']);
+        $offset += $record['Length'];
+
+        if ($record['Type'] == doh_get_qtypes($requesttype)) {
+            if ($requesttype === 'MX') {
+                $priority = unpack('n', substr($data, 0, 2))[1];
+                $host = doh_raw2domain(substr($data, 2));
+                $results[] = "$host (priority $priority)";
+            } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
+                $results[] = doh_raw2domain($data);
+            } elseif ($requesttype === 'A' || $requesttype === 'AAAA') {
+                $results[] = inet_ntop($data);
+            }
+        }
+    }
+
+    return $results;
+}
+
+/* Main */
+$dnsquery = doh_generate_dnsquery($domain, $requesttype);
+$response = doh_connect_https($doh_url, $dnsquery);
+$results = doh_read_dnsanswer($response, $requesttype);
+
+if (empty($results)) {
+    die("No records found for $domain ($requesttype).\n");
+}
+
+echo "DNS Records for $domain ($requesttype):\n";
+foreach ($results as $record) {
+    echo "- $record\n";
+}
