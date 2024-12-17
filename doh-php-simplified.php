@@ -150,7 +150,7 @@ function doh_read_dnsanswer($response, $requesttype) {
                     die("Error: MX record data too short.\n");
                 }
                 $priority = unpack('n', substr($data, 0, 2))[1];
-                $sub_offset = 2;
+                $sub_offset = $offset - $record['Length'] + 2;
                 $host = doh_raw2domain($response, $sub_offset);
                 $results[] = "$host (priority $priority)";
             } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
