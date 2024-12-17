@@ -83,29 +83,23 @@ function doh_raw2domain($response, &$offset) {
         }
 
         $len = ord($response[$offset]);
+
         if ($len === 0) {
             $offset++;
             break;
         }
 
-        // Handle compressed labels
         if (($len & 0xC0) === 0xC0) {
             if (!$jumped) {
-                $original_offset = $offset + 2; // Save current offset
+                $original_offset = $offset + 2;
             }
             $pointer_offset = (($len & 0x3F) << 8) | ord($response[$offset + 1]);
-            if ($pointer_offset >= strlen($response)) {
-                die("Error: Pointer offset out of bounds.\n");
-            }
             $offset = $pointer_offset;
             $jumped = true;
             continue;
         }
 
         $offset++;
-        if ($offset + $len > strlen($response)) {
-            die("Error: Length out of bounds while parsing domain name.\n");
-        }
         $domainname .= substr($response, $offset, $len) . ".";
         $offset += $len;
     }
@@ -126,11 +120,11 @@ function doh_read_dnsanswer($response, $requesttype) {
     }
 
     $offset = 12;
-    while ($header['QDCount']-- > 0) { // Skip Questions
+    while ($header['QDCount']-- > 0) {
         while (ord($response[$offset]) > 0) {
             $offset += ord($response[$offset]) + 1;
         }
-        $offset += 5; // Null byte + QTYPE + QCLASS
+        $offset += 5;
     }
 
     while ($header['ANCount']-- > 0) {
@@ -144,11 +138,11 @@ function doh_read_dnsanswer($response, $requesttype) {
         if ($record['Type'] == doh_get_qtypes($requesttype)) {
             if ($requesttype === 'MX') {
                 $priority = unpack('n', substr($data, 0, 2))[1];
-                $sub_offset = $offset - $record['Length'] + 2; // Start after priority
+                $sub_offset = $offset - $record['Length'] + 2;
                 $host = doh_raw2domain($response, $sub_offset);
                 $results[] = "$host (priority $priority)";
             } elseif ($requesttype === 'NS' || $requesttype === 'CNAME') {
-                $results[] = doh_raw2domain($data, $offset);
+                $results[] = doh_raw2domain($response, $offset - $record['Length']);
             } elseif ($requesttype === 'A' || $requesttype === 'AAAA') {
                 $results[] = inet_ntop($data);
             }
