@@ -8,7 +8,7 @@
  */
 
 
-/* Public DoH servers: 
+/* Public DoH servers:
  * cloudflare https://cloudflare-dns.com/dns-query
  * google https://dns.google.com/experimental?ct&dns=
  * cleanbrowsing https://doh.cleanbrowsing.org/doh/family-filter/
@@ -64,19 +64,19 @@ function doh_raw2domain($qname)
 function doh_get_qtypes($requesttype = "A")
 {
     if($requesttype === "AAAA")
-    {   
+    {
         $rawtype = 28;
     }
     else if($requesttype === "CNAME")
-    {   
+    {
         $rawtype = 5;
     }
     else if($requesttype === "NS")
-    {   
+    {
         $rawtype = 2;
     }
     else
-    {   
+    {
         $rawtype = 1;
     }
     return($rawtype);
@@ -92,8 +92,8 @@ function doh_generate_dnsquery($domainname, $requesttype="A")
                   chr(0).chr(0).  /* anc */
                   chr(0).chr(0).  /* nsc */
                   chr(0).chr(0).  /* arc */
-                  doh_domain2raw($domainname). 
-                  chr(0).chr($rawtype). 
+                  doh_domain2raw($domainname).
+                  chr(0).chr($rawtype).
                   chr(0).chr(1);  /* qclass */
     return($dns_query);
 }
@@ -120,7 +120,7 @@ function doh_connect_https($dnsquery)
     if($argv[1] == "experimental-post")
     {
         curl_setopt($ch, CURLOPT_URL, "https://dns.google.com/experimental?ct");
-        curl_setopt($ch, CURLOPT_POSTFIELDS, base64_decode($dnsquery)); 
+        curl_setopt($ch, CURLOPT_POSTFIELDS, base64_decode($dnsquery));
     }
     else if($argv[1] == "cloudflare")
     {
@@ -201,7 +201,7 @@ function doh_read_dnsanswer($raw, $requesttype)
         {
             $results['ipv6'][] = $result_ip;
         }
-        
+
         /* Looping through all answers */
         if($qst_header['ancount'] > 1)
         {
